@@ -1,0 +1,15 @@
+{
+  "domain": "inkbird_ble",
+  "name": "Inkbird ISC-027BW BLE",
+  "version": "1.0.0",
+  "config_flow": true,
+  "dependencies": ["bluetooth"],
+  "requirements": ["bleak-retry-connector>=3.0.0"],
+  "bluetooth": [
+    {
+      "local_name": "S27"
+    }
+  ],
+  "codeowners": [],
+  "iot_class": "local_push"
+}

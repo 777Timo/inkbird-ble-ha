@@ -1,0 +1,28 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Inkbird ISC-027BW einrichten",
+        "description": "Bluetooth-MAC-Adresse des Inkbird Grill-Gebläses",
+        "data": {
+          "address": "Bluetooth MAC-Adresse"
+        }
+      }
+    },
+    "abort": {
+      "already_configured": "Gerät bereits konfiguriert"
+    }
+  },
+  "entity": {
+    "sensor": {
+      "probe0": {"name": "Innentemperatur"},
+      "probe1": {"name": "Sonde 1"},
+      "probe2": {"name": "Sonde 2"},
+      "fan_speed": {"name": "Lüfter Ist-Drehzahl"},
+      "grill_target_actual": {"name": "Zieltemperatur (Gerät)"}
+    },
+    "number": {
+      "target_temp": {"name": "Grill-Zieltemperatur"}
+    }
+  }
+}

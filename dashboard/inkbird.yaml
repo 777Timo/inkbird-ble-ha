@@ -1,0 +1,119 @@
+title: Inkbird Grill
+views:
+  - path: grill
+    title: Grill
+    icon: mdi:grill
+    cards:
+
+      # ── Kopfzeile ──────────────────────────────────────────────
+      - type: markdown
+        content: >
+          ## 🔥 Inkbird ISC-027BW
+          Grillthermometer & Lüftersteuerung — lokal via Bluetooth
+        style: |
+          ha-card {
+            background: linear-gradient(135deg, #1C1C1E 0%, #2C2C2E 100%);
+            border-left: 4px solid #FF6935;
+            border-radius: 12px;
+          }
+          ha-markdown { color: #ccc; }
+
+      # ── Temperatursonden ──────────────────────────────────────
+      - type: horizontal-stack
+        cards:
+          - type: gauge
+            entity: sensor.inkbird_isc_027bw_innentemperatur
+            name: Innen
+            min: 0
+            max: 350
+            needle: true
+            severity:
+              green: 0
+              yellow: 180
+              red: 260
+          - type: gauge
+            entity: sensor.inkbird_isc_027bw_sonde_1
+            name: Sonde 1
+            min: 0
+            max: 120
+            needle: true
+            severity:
+              green: 0
+              yellow: 60
+              red: 90
+          - type: gauge
+            entity: sensor.inkbird_isc_027bw_sonde_2
+            name: Sonde 2
+            min: 0
+            max: 120
+            needle: true
+            severity:
+              green: 0
+              yellow: 60
+              red: 90
+          - type: gauge
+            entity: sensor.inkbird_isc_027bw_sonde_3
+            name: Sonde 3
+            min: 0
+            max: 120
+            needle: true
+            severity:
+              green: 0
+              yellow: 60
+              red: 90
+
+      # ── Zieltemperatur & Lüfter ──────────────────────────────
+      - type: horizontal-stack
+        cards:
+          - type: entities
+            title: Steuerung
+            icon: mdi:tune
+            entities:
+              - entity: number.inkbird_isc_027bw_grill_zieltemperatur
+                name: Zieltemperatur setzen
+                icon: mdi:thermometer-chevron-up
+              - entity: sensor.inkbird_isc_027bw_zieltemperatur_gerat
+                name: Zieltemperatur Gerät
+                icon: mdi:thermometer-check
+              - type: divider
+              - entity: switch.inkbird_isc_027bw_lufter
+                name: Lüfter
+                icon: mdi:fan
+              - entity: sensor.inkbird_isc_027bw_lufter_ist_drehzahl
+                name: Lüfter Ist-Drehzahl
+                icon: mdi:fan-speed-3
+
+          - type: gauge
+            entity: sensor.inkbird_isc_027bw_lufter_ist_drehzahl
+            name: Lüfter
+            min: 0
+            max: 100
+            needle: true
+            severity:
+              green: 0
+              yellow: 60
+              red: 85
+
+      # ── Temperaturverlauf ────────────────────────────────────
+      - type: history-graph
+        title: Temperaturverlauf
+        hours_to_show: 4
+        refresh_interval: 30
+        entities:
+          - entity: sensor.inkbird_isc_027bw_innentemperatur
+            name: Innen (Grill)
+          - entity: sensor.inkbird_isc_027bw_sonde_1
+            name: Sonde 1
+          - entity: sensor.inkbird_isc_027bw_sonde_2
+            name: Sonde 2
+          - entity: sensor.inkbird_isc_027bw_sonde_3
+            name: Sonde 3
+
+      # ── Lüfterverlauf ────────────────────────────────────────
+      - type: history-graph
+        title: Lüfterverlauf
+        hours_to_show: 4
+        refresh_interval: 30
+        entities:
+          - entity: sensor.inkbird_isc_027bw_lufter_ist_drehzahl
+            name: Lüfter Ist-Drehzahl

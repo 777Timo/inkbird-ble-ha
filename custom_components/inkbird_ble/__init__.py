@@ -21,8 +21,9 @@ from homeassistant.core import HomeAssistant
 _LOGGER = logging.getLogger(__name__)
 
 DOMAIN = "inkbird_ble"
-PLATFORMS = ["sensor", "number"]
+PLATFORMS = ["sensor", "number", "switch"]
 
+FFF1 = "0000fff1-0000-1000-8000-00805f9b34fb"
 FFF2 = "0000fff2-0000-1000-8000-00805f9b34fb"
 FFF3 = "0000fff3-0000-1000-8000-00805f9b34fb"
 
@@ -61,6 +62,21 @@ def decode_fff2(data: bytes) -> dict:
     return result
 
 
+def build_fff1(
+    current_fff1: bytes,
+    fan_on: bool | None = None,
+    speed: int | None = None,
+) -> bytes:
+    """FFF1 Write: Byte[0]=fan, Byte[6]=speed (0-100), CRC16-Modbus neu berechnen."""
+    payload = bytearray(current_fff1)
+    if fan_on is not None:
+        payload[0] = 1 if fan_on else 0
+    if speed is not None:
+        payload[6] = max(0, min(100, speed))
+    struct.pack_into("<H", payload, 18, crc16_modbus(bytes(payload[:18])))
+    return bytes(payload)
+
+
 def build_fff3(current_fff3: bytes, target_c: float) -> bytes:
     """FFF3 Write: bytes[0-1] = Grill-Zieltemp in Fahrenheit×10, CRC16-Modbus an bytes[18-19]."""
     payload = bytearray(current_fff3)
@@ -77,6 +93,7 @@ class InkbirdData:
     probe3: float | None = None
     fan_speed: int | None = None
     grill_target_actual: float | None = None
+    fan_on: bool | None = None
     connected: bool = False
 
 
@@ -90,7 +107,9 @@ class InkbirdCoordinator:
         self._target_temp: float = 100.0
         self._listeners: list[Callable] = []
         self._task: asyncio.Task | None = None
+        self._fff1_current: bytes = bytes(20)
         self._fff3_current: bytes = bytes(20)
+        self._pending_fan_on: bool | None = None
         self._pending_target: float | None = None
 
     @property
@@ -117,6 +136,11 @@ class InkbirdCoordinator:
                 await self._task
             except asyncio.CancelledError:
                 pass
+
+    async def async_set_fan_on(self, on: bool) -> None:
+        self._pending_fan_on = on
+        self.data.fan_on = on
+        self._notify()
 
     async def async_set_target_temp(self, temp_c: float) -> None:
         self._pending_target = temp_c
@@ -175,7 +199,7 @@ class InkbirdCoordinator:
             await asyncio.sleep(15)
             return
 
-        _LOGGER.info("Verbinde mit Inkbird S27 %s", self.address)
+        _LOGGER.info("Verbinde mit Inkbird %s", self.address)
         client = await establish_connection(
             BleakClientWithServiceCache,
             ble_device,
@@ -183,7 +207,9 @@ class InkbirdCoordinator:
             max_attempts=3,
         )
         async with client:
-            _LOGGER.info("Inkbird verbunden")
+            for svc in client.services:
+                chars = [c.uuid for c in svc.characteristics]
+                _LOGGER.warning("BLE Service %s: %s", svc.uuid, chars)
             self.data.connected = True
 
             def fff2_handler(sender, data: bytearray) -> None:
@@ -200,9 +226,9 @@ class InkbirdCoordinator:
                 await asyncio.wait_for(
                     client.start_notify(FFF2, fff2_handler), timeout=10.0
                 )
-                _LOGGER.info("FFF2 Notify registriert")
+                _LOGGER.warning("FFF2 Notify registriert")
             except Exception as exc:
-                _LOGGER.warning("FFF2 start_notify Fehler: %s — verwende Polling", exc)
+                _LOGGER.warning("FFF2 start_notify Fehler: %s", exc)
 
             await asyncio.sleep(2.0)
 
@@ -214,19 +240,41 @@ class InkbirdCoordinator:
                 self._fff3_current = fff3_init
                 tgt_f10 = struct.unpack_from("<H", fff3_init, 0)[0]
                 tgt_c = _f10_to_c(tgt_f10)
-                _LOGGER.info("FFF3 Grill-Zieltemp: %d F×10 → %s°C", tgt_f10, tgt_c)
+                _LOGGER.warning("FFF3 Zieltemp: %d F×10 → %s°C", tgt_f10, tgt_c)
                 if tgt_c is not None and self._pending_target is None:
                     self._target_temp = tgt_c
                     self.data.grill_target_actual = tgt_c
             except Exception as exc:
                 _LOGGER.warning("FFF3 read Fehler: %s", exc)
 
-            _LOGGER.info("Init abgeschlossen — starte Polling-Loop")
+            # FFF1 lesen (Gerätestatus: fan on/off, Modus, Drehzahl)
+            try:
+                fff1_init = bytes(await asyncio.wait_for(
+                    client.read_gatt_char(FFF1), timeout=10.0
+                ))
+                self._fff1_current = fff1_init
+                self.data.fan_on = bool(fff1_init[0])
+                _LOGGER.warning("FFF1 Lüfter: %s", "AN" if self.data.fan_on else "AUS")
+            except Exception as exc:
+                _LOGGER.warning("FFF1 read Fehler: %s", exc)
+
+            _LOGGER.warning("Init abgeschlossen — starte Polling-Loop")
             self._notify()
 
             try:
                 while client.is_connected:
-                    # Pending-Zieltemp schreiben
+                    if self._pending_fan_on is not None:
+                        fan_on = self._pending_fan_on
+                        self._pending_fan_on = None
+                        fff1_new = build_fff1(self._fff1_current, fan_on=fan_on)
+                        try:
+                            await client.write_gatt_char(FFF1, fff1_new, response=True)
+                            self._fff1_current = fff1_new
+                            self.data.fan_on = fan_on
+                            _LOGGER.warning("FFF1 geschrieben: fan=%s", fan_on)
+                        except BleakError as exc:
+                            _LOGGER.warning("FFF1 Write Fehler: %s", exc)
+
                     if self._pending_target is not None:
                         self._target_temp = self._pending_target
                         self._pending_target = None
@@ -234,9 +282,33 @@ class InkbirdCoordinator:
                         try:
                             await client.write_gatt_char(FFF3, fff3_new, response=True)
                             self._fff3_current = fff3_new
-                            _LOGGER.info("FFF3 geschrieben: %.1f°C", self._target_temp)
+                            _LOGGER.warning("FFF3 geschrieben: %.1f°C", self._target_temp)
                         except BleakError as exc:
                             _LOGGER.warning("FFF3 Write Fehler: %s", exc)
+
+                    # FFF2 lesen (Fallback wenn Notify nicht kommt)
+                    try:
+                        fff2 = bytes(await asyncio.wait_for(
+                            client.read_gatt_char(FFF2), timeout=8.0
+                        ))
+                        decoded = decode_fff2(fff2)
+                        self.data.probe0 = decoded.get("probe0")
+                        self.data.probe1 = decoded.get("probe1")
+                        self.data.probe2 = decoded.get("probe2")
+                        self.data.probe3 = decoded.get("probe3")
+                        self.data.fan_speed = decoded.get("fan_speed")
+                    except Exception:
+                        pass
+
+                    # FFF1 lesen (Lüfterstatus-Update)
+                    try:
+                        fff1 = bytes(await asyncio.wait_for(
+                            client.read_gatt_char(FFF1), timeout=8.0
+                        ))
+                        self._fff1_current = fff1
+                        self.data.fan_on = bool(fff1[0])
+                    except Exception:
+                        pass
 
                     # FFF3 lesen (Zieltemp-Update vom Gerät)
                     try:
@@ -246,8 +318,8 @@ class InkbirdCoordinator:
                         self._fff3_current = fff3
                         tgt_f10 = struct.unpack_from("<H", fff3, 0)[0]
                         self.data.grill_target_actual = _f10_to_c(tgt_f10)
-                    except Exception as exc:
-                        _LOGGER.warning("FFF3 Read Fehler: %s", exc)
+                    except Exception:
+                        pass
 
                     self._notify()
                     await asyncio.sleep(3.0)
@@ -260,7 +332,7 @@ class InkbirdCoordinator:
 
         self.data.connected = False
         self._notify()
-        _LOGGER.info("Inkbird S27 getrennt — reconnect in 5s")
+        _LOGGER.info("Inkbird getrennt — reconnect in 5s")
         await asyncio.sleep(5)
 
 

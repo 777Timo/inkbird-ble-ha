@@ -3,7 +3,7 @@
 [![HACS](https://img.shields.io/badge/HACS-Custom-orange.svg)](https://hacs.xyz)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-> **Vibe coded** — Diese Integration wurde vollständig mit Hilfe von [Claude Code](https://claude.ai/code) (Anthropic) entwickelt, inklusive BLE-Protokoll-Analyse per iPhone-Sniffer.
+> **Vibe coded** — Diese Integration wurde vollständig mit Hilfe von [Claude Code](https://claude.ai/code) (Anthropic) entwickelt.
 
 Custom Integration für den **Inkbird ISC-027BW** Bluetooth-Grillthermometer mit Lüftersteuerung.
 
@@ -47,7 +47,7 @@ Custom Integration für den **Inkbird ISC-027BW** Bluetooth-Grillthermometer mit
 
 | Entität | Typ | Beschreibung |
 |---------|-----|--------------|
-| Innentemperatur / Sonde 0 | Sensor | Interne Sonde (°C) |
+| Innentemperatur / Sonde 0 | Sensor | Grill Sonde (°C) |
 | Sonde 1–3 | Sensor | Externe Sonden (°C) |
 | Lüfter Ist-Drehzahl | Sensor | Aktueller Gebläsewert (%) |
 | Grill-Zieltemperatur | Number | Zieltemperatur setzen (20–300°C) |
@@ -56,7 +56,7 @@ Custom Integration für den **Inkbird ISC-027BW** Bluetooth-Grillthermometer mit
 
 ## BLE-Protokoll
 
-Das Protokoll wurde per iPhone-BLE-Sniffer (`idevicebtlogger`) reverse-engineered:
+Das Protokoll wurde reverse-engineered:
 
 | Charakteristik | UUID | Funktion |
 |----------------|------|----------|

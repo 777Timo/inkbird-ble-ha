@@ -1,4 +1,4 @@
-"""Inkbird BLE Zieltemperatur — steuert Grill-Lüfter."""
+"""Inkbird BLE Zieltemperatur und Lüfter-Solldrehzahl."""
 from __future__ import annotations
 
 from homeassistant.components.number import NumberEntity, NumberMode
@@ -17,12 +17,12 @@ async def async_setup_entry(
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     coordinator: InkbirdCoordinator = hass.data[DOMAIN][entry.entry_id]
-    async_add_entities([InkbirdTargetTemp(coordinator, entry)])
+    async_add_entities([
+        InkbirdTargetTemp(coordinator, entry),
+    ])
 
 
 class InkbirdTargetTemp(NumberEntity):
-    """Grill-Zieltemperatur setzen (FFF3 Byte[0-1], Fahrenheit×10)."""
-
     _attr_has_entity_name = True
     _attr_name = "Grill-Zieltemperatur"
     _attr_icon = "mdi:thermometer-chevron-up"
@@ -64,3 +64,5 @@ class InkbirdTargetTemp(NumberEntity):
     async def async_set_native_value(self, value: float) -> None:
         await self._coordinator.async_set_target_temp(value)
         self.async_write_ha_state()
+
+

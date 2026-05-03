@@ -22,6 +22,8 @@ from . import DOMAIN, InkbirdCoordinator, InkbirdData
 @dataclass(frozen=True, kw_only=True)
 class InkbirdSensorDescription(SensorEntityDescription):
     value_fn: Callable[[InkbirdData], float | int | None]
+    # Wert der gezeigt wird wenn Gerät nicht verbunden ist (None = unknown)
+    offline_value: float | int | None = 0
 
 
 SENSORS: tuple[InkbirdSensorDescription, ...] = (
@@ -78,6 +80,7 @@ SENSORS: tuple[InkbirdSensorDescription, ...] = (
         native_unit_of_measurement=UnitOfTemperature.CELSIUS,
         state_class=SensorStateClass.MEASUREMENT,
         value_fn=lambda d: d.grill_target_actual,
+        offline_value=None,  # Zieltemp bleibt auf letztem Wert
     ),
 )
 
@@ -96,6 +99,7 @@ async def async_setup_entry(
 class InkbirdSensor(SensorEntity):
     entity_description: InkbirdSensorDescription
     _attr_has_entity_name = True
+    _attr_available = True  # immer verfügbar — zeigt 0 wenn getrennt
 
     def __init__(
         self,
@@ -121,14 +125,10 @@ class InkbirdSensor(SensorEntity):
 
     @callback
     def _handle_update(self) -> None:
-        self._attr_native_value = self.entity_description.value_fn(self._coordinator.data)
-        self._attr_available = self._coordinator.data.connected
         self.async_write_ha_state()
 
     @property
-    def native_value(self):
+    def native_value(self) -> float | int | None:
+        if not self._coordinator.data.connected:
+            return self.entity_description.offline_value
         return self.entity_description.value_fn(self._coordinator.data)
-
-    @property
-    def available(self) -> bool:
-        return self._coordinator.data.connected

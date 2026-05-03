@@ -5,10 +5,11 @@ import asyncio
 import logging
 import struct
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
+from bleak import BleakClient
 from bleak.exc import BleakError
-from bleak_retry_connector import BleakClientWithServiceCache, establish_connection
+from bleak_retry_connector import establish_connection
 
 from homeassistant.components.bluetooth import (
     BluetoothScanningMode,
@@ -31,6 +32,8 @@ CONF_ADDRESS = "address"
 
 # Fahrenheit×10 Schwellenwert: 0x1770 = 6000 = 600.0°F ≈ 315°C
 _F10_MAX_VALID = 0x1770
+# Marker für deaktivierte Alarme
+_F10_DISABLED = 0xFFFE
 
 
 def crc16_modbus(data: bytes) -> int:
@@ -62,6 +65,15 @@ def decode_fff2(data: bytes) -> dict:
     return result
 
 
+def decode_fff3_alarms(data: bytes) -> dict[str, float | None]:
+    """FFF3 bytes[4-9]: Alarm-Zieltemperaturen für Sonde 1, 2, 3."""
+    result: dict[str, float | None] = {}
+    for i, key in enumerate(("probe1_alarm", "probe2_alarm", "probe3_alarm")):
+        v = struct.unpack_from("<H", data, 4 + i * 2)[0]
+        result[key] = None if v == _F10_DISABLED else _f10_to_c(v)
+    return result
+
+
 def build_fff1(
     current_fff1: bytes,
     fan_on: bool | None = None,
@@ -77,10 +89,20 @@ def build_fff1(
     return bytes(payload)
 
 
-def build_fff3(current_fff3: bytes, target_c: float) -> bytes:
-    """FFF3 Write: bytes[0-1] = Grill-Zieltemp in Fahrenheit×10, CRC16-Modbus an bytes[18-19]."""
+def build_fff3(
+    current_fff3: bytes,
+    target_c: float | None = None,
+    probe_alarms: dict[str, float] | None = None,
+) -> bytes:
+    """FFF3 Write: Zieltemp + Sonden-Alarm-Temps, CRC16-Modbus an bytes[18-19]."""
     payload = bytearray(current_fff3)
-    struct.pack_into("<H", payload, 0, _c_to_f10(target_c))
+    if target_c is not None:
+        struct.pack_into("<H", payload, 0, _c_to_f10(target_c))
+    if probe_alarms:
+        offsets = {"probe1_alarm": 4, "probe2_alarm": 6, "probe3_alarm": 8}
+        for key, offset in offsets.items():
+            if key in probe_alarms:
+                struct.pack_into("<H", payload, offset, _c_to_f10(probe_alarms[key]))
     struct.pack_into("<H", payload, 18, crc16_modbus(bytes(payload[:18])))
     return bytes(payload)
 
@@ -94,6 +116,9 @@ class InkbirdData:
     fan_speed: int | None = None
     grill_target_actual: float | None = None
     fan_on: bool | None = None
+    probe1_alarm: float | None = None
+    probe2_alarm: float | None = None
+    probe3_alarm: float | None = None
     connected: bool = False
 
 
@@ -111,6 +136,7 @@ class InkbirdCoordinator:
         self._fff3_current: bytes = bytes(20)
         self._pending_fan_on: bool | None = None
         self._pending_target: float | None = None
+        self._pending_probe_alarm: dict[str, float] = {}
 
     @property
     def target_temp(self) -> float:
@@ -147,6 +173,13 @@ class InkbirdCoordinator:
         self._target_temp = temp_c
         _LOGGER.debug("Inkbird: Zieltemp → %.1f°C", temp_c)
 
+    async def async_set_probe_alarm(self, probe: str, temp_c: float) -> None:
+        """Alarm-Zieltemperatur für eine Sonde setzen (probe='probe1_alarm' usw.)."""
+        self._pending_probe_alarm[probe] = temp_c
+        setattr(self.data, probe, temp_c)
+        self._notify()
+        _LOGGER.debug("Inkbird: Sonden-Alarm %s → %.1f°C", probe, temp_c)
+
     async def _ble_loop(self) -> None:
         while True:
             try:
@@ -177,7 +210,7 @@ class InkbirdCoordinator:
             self.hass,
             _bt_callback,
             None,
-            BluetoothScanningMode.ACTIVE,
+            BluetoothScanningMode.PASSIVE,
         )
         try:
             return await asyncio.wait_for(future, timeout=timeout)
@@ -201,38 +234,20 @@ class InkbirdCoordinator:
 
         _LOGGER.info("Verbinde mit Inkbird %s", self.address)
         client = await establish_connection(
-            BleakClientWithServiceCache,
+            BleakClient,
             ble_device,
             self.address,
             max_attempts=3,
         )
         async with client:
             for svc in client.services:
-                chars = [c.uuid for c in svc.characteristics]
-                _LOGGER.warning("BLE Service %s: %s", svc.uuid, chars)
+                chars = [(c.uuid[-4:], f"h={c.handle}", f"props={c.properties}",
+                          [f"d={d.uuid[-4:]}@{d.handle}" for d in c.descriptors])
+                         for c in svc.characteristics]
+                _LOGGER.warning("BLE Service %s: %s", svc.uuid[-4:], chars)
             self.data.connected = True
 
-            def fff2_handler(sender, data: bytearray) -> None:
-                _LOGGER.debug("FFF2 notify: %s", bytes(data).hex(" "))
-                decoded = decode_fff2(bytes(data))
-                self.data.probe0 = decoded.get("probe0")
-                self.data.probe1 = decoded.get("probe1")
-                self.data.probe2 = decoded.get("probe2")
-                self.data.probe3 = decoded.get("probe3")
-                self.data.fan_speed = decoded.get("fan_speed")
-                self._notify()
-
-            try:
-                await asyncio.wait_for(
-                    client.start_notify(FFF2, fff2_handler), timeout=10.0
-                )
-                _LOGGER.warning("FFF2 Notify registriert")
-            except Exception as exc:
-                _LOGGER.warning("FFF2 start_notify Fehler: %s", exc)
-
-            await asyncio.sleep(2.0)
-
-            # FFF3 lesen — bytes[0-1] = Grill-Zieltemp in Fahrenheit×10
+            # FFF3 lesen — Zieltemp + Sonden-Alarme
             try:
                 fff3_init = bytes(await asyncio.wait_for(
                     client.read_gatt_char(FFF3), timeout=10.0
@@ -244,6 +259,11 @@ class InkbirdCoordinator:
                 if tgt_c is not None and self._pending_target is None:
                     self._target_temp = tgt_c
                     self.data.grill_target_actual = tgt_c
+                alarms = decode_fff3_alarms(fff3_init)
+                self.data.probe1_alarm = alarms["probe1_alarm"]
+                self.data.probe2_alarm = alarms["probe2_alarm"]
+                self.data.probe3_alarm = alarms["probe3_alarm"]
+                _LOGGER.warning("FFF3 Sonden-Alarme: %s", alarms)
             except Exception as exc:
                 _LOGGER.warning("FFF3 read Fehler: %s", exc)
 
@@ -261,8 +281,14 @@ class InkbirdCoordinator:
             _LOGGER.warning("Init abgeschlossen — starte Polling-Loop")
             self._notify()
 
+            consecutive_errors = 0
             try:
                 while client.is_connected:
+                    if consecutive_errors >= 3:
+                        _LOGGER.warning("3 aufeinanderfolgende Read-Fehler — Verbindung trennen und neu aufbauen")
+                        break
+
+                    # FFF1 Write (Lüfter An/Aus)
                     if self._pending_fan_on is not None:
                         fan_on = self._pending_fan_on
                         self._pending_fan_on = None
@@ -275,60 +301,80 @@ class InkbirdCoordinator:
                         except BleakError as exc:
                             _LOGGER.warning("FFF1 Write Fehler: %s", exc)
 
-                    if self._pending_target is not None:
-                        self._target_temp = self._pending_target
+                    # FFF3 Write (Zieltemp und/oder Sonden-Alarme) — in einem einzigen Write
+                    if self._pending_target is not None or self._pending_probe_alarm:
+                        target = self._pending_target
+                        alarms = self._pending_probe_alarm.copy() if self._pending_probe_alarm else None
                         self._pending_target = None
-                        fff3_new = build_fff3(self._fff3_current, self._target_temp)
+                        self._pending_probe_alarm.clear()
+                        fff3_new = build_fff3(self._fff3_current, target_c=target, probe_alarms=alarms)
                         try:
                             await client.write_gatt_char(FFF3, fff3_new, response=True)
                             self._fff3_current = fff3_new
-                            _LOGGER.warning("FFF3 geschrieben: %.1f°C", self._target_temp)
+                            if target is not None:
+                                _LOGGER.warning("FFF3 Zieltemp geschrieben: %.1f°C", self._target_temp)
+                            if alarms:
+                                _LOGGER.warning("FFF3 Sonden-Alarme geschrieben: %s", alarms)
                         except BleakError as exc:
                             _LOGGER.warning("FFF3 Write Fehler: %s", exc)
 
-                    # FFF2 lesen (Fallback wenn Notify nicht kommt)
+                    # FFF2 lesen
+                    poll_ok = False
                     try:
                         fff2 = bytes(await asyncio.wait_for(
                             client.read_gatt_char(FFF2), timeout=8.0
                         ))
+                        _LOGGER.warning("FFF2 gelesen: %s", fff2.hex(" "))
                         decoded = decode_fff2(fff2)
                         self.data.probe0 = decoded.get("probe0")
                         self.data.probe1 = decoded.get("probe1")
                         self.data.probe2 = decoded.get("probe2")
                         self.data.probe3 = decoded.get("probe3")
                         self.data.fan_speed = decoded.get("fan_speed")
-                    except Exception:
-                        pass
+                        _LOGGER.warning("FFF2 decoded: %s", decoded)
+                        poll_ok = True
+                    except Exception as exc:
+                        _LOGGER.warning("FFF2 read Fehler: %s", exc)
 
                     # FFF1 lesen (Lüfterstatus-Update)
                     try:
                         fff1 = bytes(await asyncio.wait_for(
                             client.read_gatt_char(FFF1), timeout=8.0
                         ))
+                        _LOGGER.warning("FFF1 gelesen: %s", fff1.hex(" "))
                         self._fff1_current = fff1
                         self.data.fan_on = bool(fff1[0])
-                    except Exception:
-                        pass
+                        poll_ok = True
+                    except Exception as exc:
+                        _LOGGER.warning("FFF1 read Fehler: %s", exc)
 
-                    # FFF3 lesen (Zieltemp-Update vom Gerät)
+                    # FFF3 lesen (Zieltemp + Sonden-Alarme Update vom Gerät)
                     try:
                         fff3 = bytes(await asyncio.wait_for(
                             client.read_gatt_char(FFF3), timeout=8.0
                         ))
+                        _LOGGER.warning("FFF3 gelesen: %s", fff3.hex(" "))
                         self._fff3_current = fff3
                         tgt_f10 = struct.unpack_from("<H", fff3, 0)[0]
                         self.data.grill_target_actual = _f10_to_c(tgt_f10)
-                    except Exception:
-                        pass
+                        alarms = decode_fff3_alarms(fff3)
+                        self.data.probe1_alarm = alarms["probe1_alarm"]
+                        self.data.probe2_alarm = alarms["probe2_alarm"]
+                        self.data.probe3_alarm = alarms["probe3_alarm"]
+                        poll_ok = True
+                    except Exception as exc:
+                        _LOGGER.warning("FFF3 read Fehler: %s", exc)
+
+                    if poll_ok:
+                        consecutive_errors = 0
+                    else:
+                        consecutive_errors += 1
 
                     self._notify()
                     await asyncio.sleep(3.0)
 
             finally:
-                try:
-                    await client.stop_notify(FFF2)
-                except Exception:
-                    pass
+                pass
 
         self.data.connected = False
         self._notify()

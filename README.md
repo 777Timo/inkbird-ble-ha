@@ -109,6 +109,22 @@ Das Protokoll wurde reverse-engineered:
 
 ---
 
+## Changelog
+
+### v1.1.1 (2026-05-06)
+- **Fix:** `hass.async_create_task()` durch `entry.async_create_background_task()` ersetzt — HA wartete beim Bootstrap auf den endlosen BLE-Loop, was den Start um ~8–10 Minuten verzögerte
+
+### v1.1.0
+- Sonden-Alarm-Entities (Sonde 1–3, schreibbar, FFF3)
+- GATT-Cache-Fix für zuverlässigeres Auslesen
+- Alle Entities immer verfügbar (zeigen 0/None wenn getrennt)
+
+### v1.0.0
+- Initiale Veröffentlichung
+- Temperatursensoren, Lüfter-Switch, Zieltemperatur
+
+---
+
 ## Lizenz
 
 MIT — siehe [LICENSE](LICENSE)

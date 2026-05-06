@@ -152,8 +152,10 @@ class InkbirdCoordinator:
         for cb in self._listeners:
             self.hass.loop.call_soon(cb)
 
-    async def async_start(self) -> None:
-        self._task = self.hass.async_create_task(self._ble_loop())
+    async def async_start(self, entry: ConfigEntry) -> None:
+        self._task = entry.async_create_background_task(
+            self.hass, self._ble_loop(), "inkbird_ble_loop"
+        )
 
     async def async_stop(self) -> None:
         if self._task:
@@ -386,7 +388,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     address = entry.data[CONF_ADDRESS]
     coordinator = InkbirdCoordinator(hass, address)
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = coordinator
-    await coordinator.async_start()
+    await coordinator.async_start(entry)
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     return True
 

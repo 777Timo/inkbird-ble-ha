@@ -1,7 +1,7 @@
 {
   "domain": "inkbird_ble",
   "name": "Inkbird ISC-027BW BLE",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "config_flow": true,
   "dependencies": ["bluetooth"],
   "requirements": ["bleak-retry-connector>=3.0.0"],

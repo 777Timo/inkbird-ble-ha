@@ -3,7 +3,7 @@
     "step": {
       "user": {
         "title": "Set up Inkbird ISC-027BW",
-        "description": "Bluetooth MAC address of the Inkbird ISC-027BW",
+        "description": "Bluetooth MAC address of the Inkbird grill blower",
         "data": {
           "address": "Bluetooth MAC Address"
         }
@@ -15,14 +15,21 @@
   },
   "entity": {
     "sensor": {
-      "probe0": {"name": "Grill Temperature"},
+      "probe0": {"name": "Internal Temperature"},
       "probe1": {"name": "Probe 1"},
       "probe2": {"name": "Probe 2"},
+      "probe3": {"name": "Probe 3"},
       "fan_speed": {"name": "Fan Speed"},
-      "grill_target_actual": {"name": "Grill Target Temperature"}
+      "grill_target_actual": {"name": "Target Temperature (Device)"}
     },
     "number": {
-      "target_temp": {"name": "Grill Target Temperature"}
+      "target_temp": {"name": "Grill Target Temperature"},
+      "probe1_alarm": {"name": "Probe 1 Alarm Temperature"},
+      "probe2_alarm": {"name": "Probe 2 Alarm Temperature"},
+      "probe3_alarm": {"name": "Probe 3 Alarm Temperature"}
+    },
+    "switch": {
+      "fan_switch": {"name": "Fan"}
     }
   }
 }

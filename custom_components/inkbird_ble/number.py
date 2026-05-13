@@ -21,7 +21,7 @@ async def async_setup_entry(
     coordinator: InkbirdCoordinator = hass.data[DOMAIN][entry.entry_id]
     entities: list[NumberEntity] = [InkbirdTargetTemp(coordinator, entry)]
     entities += [
-        InkbirdProbeAlarm(coordinator, entry, probe, name)
+        InkbirdProbeAlarm(coordinator, entry, probe, translation_key)
         for probe, translation_key in (
             ("probe1_alarm", "probe1_alarm"),
             ("probe2_alarm", "probe2_alarm"),

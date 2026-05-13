@@ -92,7 +92,7 @@ class InkbirdProbeAlarm(NumberEntity):
     ) -> None:
         self._coordinator = coordinator
         self._probe = probe  # z.B. "probe1_alarm"
-        self._attr_name = name
+        self._attr_translation_key = name
         self._attr_unique_id = f"{entry.entry_id}_{probe}"
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, entry.entry_id)},

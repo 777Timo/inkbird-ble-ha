@@ -21,7 +21,7 @@ async def async_setup_entry(
 
 class InkbirdFanSwitch(SwitchEntity):
     _attr_has_entity_name = True
-    _attr_name = "Lüfter"
+    _attr_translation_key = "fan_switch"
     _attr_icon = "mdi:fan"
     _attr_available = True  # immer verfügbar — zeigt aus wenn getrennt
 

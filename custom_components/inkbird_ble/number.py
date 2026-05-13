@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from homeassistant.components.number import NumberEntity, NumberMode
+from homeassistant.components.number import NumberDeviceClass, NumberEntity, NumberMode
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import UnitOfTemperature
 from homeassistant.core import HomeAssistant, callback
@@ -35,6 +35,7 @@ class InkbirdTargetTemp(NumberEntity):
     _attr_has_entity_name = True
     _attr_translation_key = "target_temp"
     _attr_icon = "mdi:thermometer-chevron-up"
+    _attr_device_class = NumberDeviceClass.TEMPERATURE
     _attr_native_unit_of_measurement = UnitOfTemperature.CELSIUS
     _attr_native_min_value = 20.0
     _attr_native_max_value = 300.0
@@ -76,6 +77,7 @@ class InkbirdProbeAlarm(NumberEntity):
 
     _attr_has_entity_name = True
     _attr_icon = "mdi:thermometer-alert"
+    _attr_device_class = NumberDeviceClass.TEMPERATURE
     _attr_native_unit_of_measurement = UnitOfTemperature.CELSIUS
     _attr_native_min_value = 20.0
     _attr_native_max_value = 300.0

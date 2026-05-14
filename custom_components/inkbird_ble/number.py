@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from homeassistant.components.number import NumberEntity, NumberMode
+from homeassistant.components.number import NumberDeviceClass, NumberEntity, NumberMode
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import UnitOfTemperature
 from homeassistant.core import HomeAssistant, callback
@@ -21,11 +21,11 @@ async def async_setup_entry(
     coordinator: InkbirdCoordinator = hass.data[DOMAIN][entry.entry_id]
     entities: list[NumberEntity] = [InkbirdTargetTemp(coordinator, entry)]
     entities += [
-        InkbirdProbeAlarm(coordinator, entry, probe, name)
-        for probe, name in (
-            ("probe1_alarm", "Sonde 1 Alarm-Temperatur"),
-            ("probe2_alarm", "Sonde 2 Alarm-Temperatur"),
-            ("probe3_alarm", "Sonde 3 Alarm-Temperatur"),
+        InkbirdProbeAlarm(coordinator, entry, probe, translation_key)
+        for probe, translation_key in (
+            ("probe1_alarm", "probe1_alarm"),
+            ("probe2_alarm", "probe2_alarm"),
+            ("probe3_alarm", "probe3_alarm"),
         )
     ]
     async_add_entities(entities)
@@ -33,8 +33,9 @@ async def async_setup_entry(
 
 class InkbirdTargetTemp(NumberEntity):
     _attr_has_entity_name = True
-    _attr_name = "Grill-Zieltemperatur"
+    _attr_translation_key = "target_temp"
     _attr_icon = "mdi:thermometer-chevron-up"
+    _attr_device_class = NumberDeviceClass.TEMPERATURE
     _attr_native_unit_of_measurement = UnitOfTemperature.CELSIUS
     _attr_native_min_value = 20.0
     _attr_native_max_value = 300.0
@@ -76,6 +77,7 @@ class InkbirdProbeAlarm(NumberEntity):
 
     _attr_has_entity_name = True
     _attr_icon = "mdi:thermometer-alert"
+    _attr_device_class = NumberDeviceClass.TEMPERATURE
     _attr_native_unit_of_measurement = UnitOfTemperature.CELSIUS
     _attr_native_min_value = 20.0
     _attr_native_max_value = 300.0
@@ -92,7 +94,7 @@ class InkbirdProbeAlarm(NumberEntity):
     ) -> None:
         self._coordinator = coordinator
         self._probe = probe  # z.B. "probe1_alarm"
-        self._attr_name = name
+        self._attr_translation_key = name
         self._attr_unique_id = f"{entry.entry_id}_{probe}"
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, entry.entry_id)},

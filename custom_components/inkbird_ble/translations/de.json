@@ -18,11 +18,18 @@
       "probe0": {"name": "Innentemperatur"},
       "probe1": {"name": "Sonde 1"},
       "probe2": {"name": "Sonde 2"},
+      "probe3": {"name": "Sonde 3"},
       "fan_speed": {"name": "Lüfter Ist-Drehzahl"},
       "grill_target_actual": {"name": "Zieltemperatur (Gerät)"}
     },
     "number": {
-      "target_temp": {"name": "Grill-Zieltemperatur"}
+      "target_temp": {"name": "Grill-Zieltemperatur"},
+      "probe1_alarm": {"name": "Sonde 1 Alarm-Temperatur"},
+      "probe2_alarm": {"name": "Sonde 2 Alarm-Temperatur"},
+      "probe3_alarm": {"name": "Sonde 3 Alarm-Temperatur"}
+    },
+    "switch": {
+      "fan_switch": {"name": "Lüfter"}
     }
   }
 }

@@ -121,6 +121,12 @@ Das Protokoll wurde reverse-engineered:
 
 ## Changelog
 
+### v1.2.0 (2026-05-14)
+- **Neu:** Mehrsprachigkeit — englische und deutsche Übersetzungen für alle Entitätsnamen und den Config-Flow
+- **Fix:** `NumberDeviceClass.TEMPERATURE` für Zieltemperatur und Sonden-Alarm-Entities gesetzt — HA zeigt Werte jetzt in der vom Nutzer eingestellten Einheit (°C/°F) an
+- **Fix:** Fehlender Eintrag für Sonde 3 in `de.json` ergänzt
+- Beitrag von [@drjjr2](https://github.com/drjjr2)
+
 ### v1.1.1 (2026-05-06)
 - **Fix:** `hass.async_create_task()` durch `entry.async_create_background_task()` ersetzt — HA wartete beim Bootstrap auf den endlosen BLE-Loop, was den Start um ~8–10 Minuten verzögerte
 

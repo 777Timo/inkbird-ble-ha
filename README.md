@@ -4,6 +4,8 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Version](https://img.shields.io/github/v/release/777Timo/inkbird-ble-ha)](https://github.com/777Timo/inkbird-ble-ha/releases)
 
+> **Unofficial integration — not affiliated with or endorsed by Inkbird / Shenzhen Inkbird Technology.**
+
 > **Vibe coded** — Developed entirely with [Claude Code](https://claude.ai/code) (Anthropic).
 
 [🇩🇪 Deutsche Version](README.de.md)

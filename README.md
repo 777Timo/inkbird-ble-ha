@@ -43,7 +43,7 @@ Custom integration for the **Inkbird ISC-027BW** Bluetooth grill thermometer wit
 3. Search for the integration and click **Download**
 4. Restart Home Assistant
 5. **Settings → Devices & Services → Add Integration → Inkbird BLE**
-6. Enter the Bluetooth address of your device (e.g. `49:24:12:07:08:A6`)
+6. Enter the Bluetooth address of your device (e.g. `XX:XX:XX:XX:XX:XX`)
 
 ### Manual
 

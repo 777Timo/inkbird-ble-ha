@@ -41,7 +41,7 @@ Custom Integration für den **Inkbird ISC-027BW** Bluetooth-Grillthermometer mit
 3. Integration suchen und **Download** klicken
 4. Home Assistant neu starten
 5. **Einstellungen → Geräte & Dienste → Integration hinzufügen → Inkbird BLE**
-6. Bluetooth-Adresse des Geräts eingeben (z. B. `49:24:12:07:08:A6`)
+6. Bluetooth-Adresse des Geräts eingeben (z. B. `XX:XX:XX:XX:XX:XX`)
 
 ### Manuell
 

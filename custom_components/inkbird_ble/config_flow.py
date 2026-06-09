@@ -12,7 +12,7 @@ from homeassistant.const import CONF_ADDRESS
 
 from . import DOMAIN
 
-DEFAULT_ADDRESS = "49:24:12:07:08:A6"
+DEFAULT_ADDRESS = "XX:XX:XX:XX:XX:XX"
 
 
 class InkbirdConfigFlow(ConfigFlow, domain=DOMAIN):

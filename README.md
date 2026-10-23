@@ -72,8 +72,10 @@ Custom integration for the **Inkbird ISC-027BW** Bluetooth grill thermometer wit
 
 ### Requirements
 
-- Home Assistant with the Bluetooth add-on or a local Bluetooth adapter
-- Inkbird ISC-027BW within range
+- Home Assistant with a **connectable** Bluetooth adapter: a local adapter on the HA host or an [ESPHome Bluetooth proxy](https://esphome.io/components/bluetooth_proxy.html) with `active: true`
+- Inkbird ISC-027BW within range (RSSI around −75 dBm or better recommended)
+
+> **Shelly devices do not work as a proxy for this integration.** Home Assistant uses them as passive scanners only: the device shows up under *Bluetooth → Advertisements*, but no connection can be established, so all entities stay empty. The integration logs a warning in this case.
 
 ---
 
@@ -126,6 +128,11 @@ Protocol was fully reverse-engineered:
 ---
 
 ## Changelog
+
+### v1.2.2
+- **Fix:** No longer tries to connect through passive-only scanners (e.g. Shelly); a clear warning is logged instead ([#3](https://github.com/777Timo/inkbird-ble-ha/issues/3))
+- **Change:** Log messages are now in English
+- **Docs:** Requirements clarified — a connectable Bluetooth adapter or ESPHome proxy is required
 
 ### v1.2.0 (2026-05-14)
 - **New:** Multilingual support — English and German translations for all entity names and config flow

@@ -12,6 +12,7 @@ from bleak.exc import BleakError
 from bleak_retry_connector import establish_connection
 
 from homeassistant.components.bluetooth import (
+    BluetoothCallbackMatcher,
     BluetoothScanningMode,
     async_ble_device_from_address,
     async_register_callback,
@@ -137,6 +138,7 @@ class InkbirdCoordinator:
         self._pending_fan_on: bool | None = None
         self._pending_target: float | None = None
         self._pending_probe_alarm: dict[str, float] = {}
+        self._passive_only_warned = False
 
     @property
     def target_temp(self) -> float:
@@ -173,14 +175,14 @@ class InkbirdCoordinator:
     async def async_set_target_temp(self, temp_c: float) -> None:
         self._pending_target = temp_c
         self._target_temp = temp_c
-        _LOGGER.debug("Inkbird: Zieltemp → %.1f°C", temp_c)
+        _LOGGER.debug("Inkbird: target temperature → %.1f°C", temp_c)
 
     async def async_set_probe_alarm(self, probe: str, temp_c: float) -> None:
         """Alarm-Zieltemperatur für eine Sonde setzen (probe='probe1_alarm' usw.)."""
         self._pending_probe_alarm[probe] = temp_c
         setattr(self.data, probe, temp_c)
         self._notify()
-        _LOGGER.debug("Inkbird: Sonden-Alarm %s → %.1f°C", probe, temp_c)
+        _LOGGER.debug("Inkbird: probe alarm %s → %.1f°C", probe, temp_c)
 
     async def _ble_loop(self) -> None:
         while True:
@@ -189,29 +191,28 @@ class InkbirdCoordinator:
             except asyncio.CancelledError:
                 raise
             except Exception as exc:
-                _LOGGER.warning("Inkbird BLE Fehler: %s — Retry in 15s", exc)
+                _LOGGER.warning("Inkbird BLE error: %s — retry in 15 s", exc)
                 self.data.connected = False
                 self._notify()
                 await asyncio.sleep(15)
 
     async def _wait_for_advertisement(self, timeout: float = 60.0):
+        """Wartet auf ein Advertisement über einen verbindungsfähigen Scanner.
+
+        Passive Scanner (z. B. Shelly) können keine GATT-Verbindung aufbauen
+        und werden daher ignoriert.
+        """
         loop = asyncio.get_running_loop()
         future: asyncio.Future = loop.create_future()
 
         def _bt_callback(service_info, change) -> None:
-            if service_info.address.upper() != self.address.upper():
-                return
-            ha_device = async_ble_device_from_address(
-                self.hass, self.address, connectable=True
-            )
-            chosen = ha_device if ha_device is not None else service_info.device
             if not future.done():
-                future.set_result(chosen)
+                future.set_result(service_info.device)
 
         cancel = async_register_callback(
             self.hass,
             _bt_callback,
-            None,
+            BluetoothCallbackMatcher(address=self.address.upper(), connectable=True),
             BluetoothScanningMode.PASSIVE,
         )
         try:
@@ -226,15 +227,30 @@ class InkbirdCoordinator:
             self.hass, self.address, connectable=True
         )
         if ble_device is None:
-            _LOGGER.info("Inkbird (%s) nicht im Scanner — warte auf Advertisement...", self.address)
+            seen_passive = async_ble_device_from_address(
+                self.hass, self.address, connectable=False
+            )
+            if seen_passive is not None:
+                if not self._passive_only_warned:
+                    _LOGGER.warning(
+                        "Inkbird (%s) is only seen by non-connectable Bluetooth scanners "
+                        "(e.g. Shelly). This integration needs an active connection: use a "
+                        "local Bluetooth adapter or an ESPHome Bluetooth proxy with "
+                        "'active: true' within range of the device",
+                        self.address,
+                    )
+                    self._passive_only_warned = True
+            else:
+                _LOGGER.info("Inkbird (%s) not seen by any scanner — waiting for advertisement", self.address)
             ble_device = await self._wait_for_advertisement(timeout=60.0)
 
         if ble_device is None:
-            _LOGGER.info("Inkbird (%s) — kein Advertisement in 60s, retry in 15s", self.address)
+            _LOGGER.info("Inkbird (%s) — no connectable advertisement within 60 s, retry in 15 s", self.address)
             await asyncio.sleep(15)
             return
 
-        _LOGGER.info("Verbinde mit Inkbird %s", self.address)
+        self._passive_only_warned = False
+        _LOGGER.info("Connecting to Inkbird %s", self.address)
         client = await establish_connection(
             BleakClient,
             ble_device,
@@ -257,7 +273,7 @@ class InkbirdCoordinator:
                 self._fff3_current = fff3_init
                 tgt_f10 = struct.unpack_from("<H", fff3_init, 0)[0]
                 tgt_c = _f10_to_c(tgt_f10)
-                _LOGGER.warning("FFF3 Zieltemp: %d F×10 → %s°C", tgt_f10, tgt_c)
+                _LOGGER.warning("FFF3 target temperature: %d F×10 → %s°C", tgt_f10, tgt_c)
                 if tgt_c is not None and self._pending_target is None:
                     self._target_temp = tgt_c
                     self.data.grill_target_actual = tgt_c
@@ -265,9 +281,9 @@ class InkbirdCoordinator:
                 self.data.probe1_alarm = alarms["probe1_alarm"]
                 self.data.probe2_alarm = alarms["probe2_alarm"]
                 self.data.probe3_alarm = alarms["probe3_alarm"]
-                _LOGGER.warning("FFF3 Sonden-Alarme: %s", alarms)
+                _LOGGER.warning("FFF3 probe alarms: %s", alarms)
             except Exception as exc:
-                _LOGGER.warning("FFF3 read Fehler: %s", exc)
+                _LOGGER.warning("FFF3 read error: %s", exc)
 
             # FFF1 lesen (Gerätestatus: fan on/off, Modus, Drehzahl)
             try:
@@ -276,18 +292,18 @@ class InkbirdCoordinator:
                 ))
                 self._fff1_current = fff1_init
                 self.data.fan_on = bool(fff1_init[0])
-                _LOGGER.warning("FFF1 Lüfter: %s", "AN" if self.data.fan_on else "AUS")
+                _LOGGER.warning("FFF1 fan: %s", "ON" if self.data.fan_on else "OFF")
             except Exception as exc:
-                _LOGGER.warning("FFF1 read Fehler: %s", exc)
+                _LOGGER.warning("FFF1 read error: %s", exc)
 
-            _LOGGER.warning("Init abgeschlossen — starte Polling-Loop")
+            _LOGGER.warning("Init complete — starting polling loop")
             self._notify()
 
             consecutive_errors = 0
             try:
                 while client.is_connected:
                     if consecutive_errors >= 3:
-                        _LOGGER.warning("3 aufeinanderfolgende Read-Fehler — Verbindung trennen und neu aufbauen")
+                        _LOGGER.warning("3 consecutive read errors — disconnecting and reconnecting")
                         break
 
                     # FFF1 Write (Lüfter An/Aus)
@@ -299,9 +315,9 @@ class InkbirdCoordinator:
                             await client.write_gatt_char(FFF1, fff1_new, response=True)
                             self._fff1_current = fff1_new
                             self.data.fan_on = fan_on
-                            _LOGGER.warning("FFF1 geschrieben: fan=%s", fan_on)
+                            _LOGGER.warning("FFF1 written: fan=%s", fan_on)
                         except BleakError as exc:
-                            _LOGGER.warning("FFF1 Write Fehler: %s", exc)
+                            _LOGGER.warning("FFF1 write error: %s", exc)
 
                     # FFF3 Write (Zieltemp und/oder Sonden-Alarme) — in einem einzigen Write
                     if self._pending_target is not None or self._pending_probe_alarm:
@@ -314,11 +330,11 @@ class InkbirdCoordinator:
                             await client.write_gatt_char(FFF3, fff3_new, response=True)
                             self._fff3_current = fff3_new
                             if target is not None:
-                                _LOGGER.warning("FFF3 Zieltemp geschrieben: %.1f°C", self._target_temp)
+                                _LOGGER.warning("FFF3 target temperature written: %.1f°C", self._target_temp)
                             if alarms:
-                                _LOGGER.warning("FFF3 Sonden-Alarme geschrieben: %s", alarms)
+                                _LOGGER.warning("FFF3 probe alarms written: %s", alarms)
                         except BleakError as exc:
-                            _LOGGER.warning("FFF3 Write Fehler: %s", exc)
+                            _LOGGER.warning("FFF3 write error: %s", exc)
 
                     # FFF2 lesen
                     poll_ok = False
@@ -326,7 +342,7 @@ class InkbirdCoordinator:
                         fff2 = bytes(await asyncio.wait_for(
                             client.read_gatt_char(FFF2), timeout=8.0
                         ))
-                        _LOGGER.warning("FFF2 gelesen: %s", fff2.hex(" "))
+                        _LOGGER.warning("FFF2 read: %s", fff2.hex(" "))
                         decoded = decode_fff2(fff2)
                         self.data.probe0 = decoded.get("probe0")
                         self.data.probe1 = decoded.get("probe1")
@@ -336,26 +352,26 @@ class InkbirdCoordinator:
                         _LOGGER.warning("FFF2 decoded: %s", decoded)
                         poll_ok = True
                     except Exception as exc:
-                        _LOGGER.warning("FFF2 read Fehler: %s", exc)
+                        _LOGGER.warning("FFF2 read error: %s", exc)
 
                     # FFF1 lesen (Lüfterstatus-Update)
                     try:
                         fff1 = bytes(await asyncio.wait_for(
                             client.read_gatt_char(FFF1), timeout=8.0
                         ))
-                        _LOGGER.warning("FFF1 gelesen: %s", fff1.hex(" "))
+                        _LOGGER.warning("FFF1 read: %s", fff1.hex(" "))
                         self._fff1_current = fff1
                         self.data.fan_on = bool(fff1[0])
                         poll_ok = True
                     except Exception as exc:
-                        _LOGGER.warning("FFF1 read Fehler: %s", exc)
+                        _LOGGER.warning("FFF1 read error: %s", exc)
 
                     # FFF3 lesen (Zieltemp + Sonden-Alarme Update vom Gerät)
                     try:
                         fff3 = bytes(await asyncio.wait_for(
                             client.read_gatt_char(FFF3), timeout=8.0
                         ))
-                        _LOGGER.warning("FFF3 gelesen: %s", fff3.hex(" "))
+                        _LOGGER.warning("FFF3 read: %s", fff3.hex(" "))
                         self._fff3_current = fff3
                         tgt_f10 = struct.unpack_from("<H", fff3, 0)[0]
                         self.data.grill_target_actual = _f10_to_c(tgt_f10)
@@ -365,7 +381,7 @@ class InkbirdCoordinator:
                         self.data.probe3_alarm = alarms["probe3_alarm"]
                         poll_ok = True
                     except Exception as exc:
-                        _LOGGER.warning("FFF3 read Fehler: %s", exc)
+                        _LOGGER.warning("FFF3 read error: %s", exc)
 
                     if poll_ok:
                         consecutive_errors = 0
@@ -380,7 +396,7 @@ class InkbirdCoordinator:
 
         self.data.connected = False
         self._notify()
-        _LOGGER.info("Inkbird getrennt — reconnect in 5s")
+        _LOGGER.info("Inkbird disconnected — reconnecting in 5 s")
         await asyncio.sleep(5)
 
 
